@@ -612,3 +612,20 @@
 
 /* Hide thumbnails preview entirely */
 #pcThumbs{ display:none !important; height:0 !important; padding:0 !important; margin:0 !important; }
+
+
+/* iOS image rounding fix and utilities */
+.photo-rounded-fix {
+  overflow: hidden;
+  border-radius: 0.75rem;
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  mask-image: radial-gradient(circle, white, black);
+}
+.photo-control-bar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
