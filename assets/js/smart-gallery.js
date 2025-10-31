@@ -52,12 +52,27 @@
 
       let i = 0;
       function render() {
-        const src = photos[i]; if (!src) return;
+        const src = photos[i];
+        if (!src) return;
+
+        img.style.transition = "opacity 0.3s ease";
         img.style.opacity = 0;
-        setTimeout(() => {
-          img.src = src;
-          img.onload = () => { img.style.opacity = 1; };
-        }, 120);
+
+        // если src совпадает — просто плавно показать
+        if (img.src.endsWith(src)) {
+          img.style.opacity = 1;
+          return;
+        }
+
+        const newImg = new Image();
+        newImg.src = src;
+        newImg.onload = () => {
+          requestAnimationFrame(() => {
+            img.src = src;
+            img.style.opacity = 1;
+          });
+        };
+
         counter.textContent = `${i + 1} / ${photos.length}`;
       }
       function next() { i = (i + 1) % photos.length; render(); }
