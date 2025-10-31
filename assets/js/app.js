@@ -30,23 +30,6 @@ const tg = window.Telegram ? window.Telegram.WebApp : null;
     let groupsCache=null, groupsLoading=null; // грузим только при входе на root
     const servicesCache=new Map(); // per group
     const serviceDetailsCache=new Map();
-
-function normalizePhotosField(service){
-    try{
-        if (service && service.photos !== undefined && service.photos !== null){
-            if (typeof service.photos === 'string'){
-                const s = service.photos.trim();
-                if (s.startsWith('[')) { service.photos = JSON.parse(s); }
-                else if (s.length>0) { service.photos = s.split(',').map(x=>x.trim()).filter(Boolean); }
-                else { service.photos = []; }
-            }
-            if (!Array.isArray(service.photos)) service.photos = [];
-        } else {
-            service.photos = [];
-        }
-    }catch(e){ service.photos = []; }
-    return service;
-}
     const feedbacksCache=new Map();
     const groupNameCache = new Map(); // groupId -> name
 
@@ -91,27 +74,67 @@ function normalizePhotosField(service){
         updateThemeIcon();
     }
 
-    function routeFromEntry(){
-        const sp = new URLSearchParams(location.search);
-        const sid = sp.get('serviceId');
+function routeFromEntry(){
+    const sp = new URLSearchParams(location.search);
+    const path = location.pathname.toLowerCase();
+
+    // ✅ Поддержка /open_service?id=123 и ?path=open_service&id=123
+    const isOpenService = path.includes('/open_service') || sp.get('path') === 'open_service';
+    if (isOpenService) {
+        const sid = sp.get('id');
         if (sid && /^\d+$/.test(sid)) {
+            // сразу показываем загрузку
+            screen().innerHTML = pageLoading('Загружаем услугу...');
             setHeaderActionsForRoot(false);
-            setBackVisible(true);
-            showServiceScreen(Number(sid));
+            setBackVisible(false); // обычную кнопку скрываем
+
+            showServiceScreen(Number(sid)).then(() => {
+                // — создаём отдельную кнопку “Главное меню”
+                const header = document.querySelector('header .flex.items-center.gap-3');
+                if (!header) return;
+
+                // если уже была — удаляем, чтобы не дублировать
+                const existing = document.getElementById('mainMenuBtn');
+                if (existing) existing.remove();
+
+                const mainMenuBtn = document.createElement('button');
+                mainMenuBtn.id = 'mainMenuBtn';
+                mainMenuBtn.textContent = 'Главное меню';
+                mainMenuBtn.className =
+                    'inline-flex px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800';
+                mainMenuBtn.onclick = () => {
+                    mainMenuBtn.remove();
+                    // полностью очищаем URL и возвращаем на главную
+                    location.href = location.origin + location.pathname.replace(/open_service.*$/, 'index.html');
+                };
+
+                header.prepend(mainMenuBtn);
+            });
+
             return;
         }
-        try {
-            const startParam = tg?.initDataUnsafe?.start_param;
-            const m = startParam?.match(/(\d{2,})/);
-            if (m) {
-                setHeaderActionsForRoot(false);
-                setBackVisible(true);
-                showServiceScreen(Number(m[1]));
-                return;
-            }
-        } catch {}
-        routeFromHash();
     }
+
+    // 🔹 остальная логика не тронута
+    const sid = sp.get('serviceId');
+    if (sid && /^\d+$/.test(sid)) {
+        setHeaderActionsForRoot(false);
+        setBackVisible(true);
+        showServiceScreen(Number(sid));
+        return;
+    }
+    try {
+        const startParam = tg?.initDataUnsafe?.start_param;
+        const m = startParam?.match(/(\d{2,})/);
+        if (m) {
+            setHeaderActionsForRoot(false);
+            setBackVisible(true);
+            showServiceScreen(Number(m[1]));
+            return;
+        }
+    } catch {}
+    routeFromHash();
+}
 
 
     function routeFromHash(){
@@ -488,7 +511,6 @@ function normalizePhotosField(service){
                 return;
             }
         }
-        normalizePhotosField(service);
         renderServiceDetails(service);
         ensureHeaderVisible && ensureHeaderVisible();
         fetchFeedbacks(serviceId);
@@ -516,108 +538,33 @@ function normalizePhotosField(service){
     </div>`);
         if(service.links || service.url){ const block=[service.links,service.url].filter(Boolean).join('\n'); parts.push(`<div class="mt-3"><p class="font-medium">🔗 Ссылки</p><div class="text-sm text-brand-700 dark:text-brand-400 whitespace-pre-wrap break-anywhere">${linkify(block)}</div></div>`); }
         
-        // Inline carousel (Avito-like): big hero, arrows, thumbnails, counter
-        if (service.photos && Array.isArray(service.photos) && service.photos.length > 0){
-            const photos = service.photos.filter(Boolean);
-            const captions = Array.isArray(service.photoTitles)? service.photoTitles : (Array.isArray(service.photoCaptions)? service.photoCaptions : []);
-            const hero = `
-            <div id="photoCarousel" class="select-none mt-4">
-              <div class="relative border border-slate-200/80 dark:border-slate-800/80 rounded-2xl overflow-hidden">
-                <div class="bg-slate-50 dark:bg-slate-800 grid place-items-center" style="min-height: 260px;">
-                  <img id="pcHero" src="${escapeAttr(photos[0])}" alt="Фото 1" class="max-h-[62vh] w-full h-auto object-contain"/>
-                </div>
-                <button id="pcPrev" class="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 text-slate-900 hover:bg-white shadow px-3 py-3 focus:outline-none focus:ring-2 focus:ring-white" aria-label="Предыдущее">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none"><path d="M15 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-                <button id="pcNext" class="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 text-slate-900 hover:bg-white shadow px-3 py-3 focus:outline-none focus:ring-2 focus:ring-white" aria-label="Следующее">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-                <div id="pcCounter" class="absolute right-3 bottom-3 text-xs font-medium text-white/90 bg-black/50 px-2 py-0.5 rounded-full">${1} / ${photos.length}</div>
-                <div id="pcCaption" class="px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hidden"></div>
-              </div>
-              <div class="mt-3 flex gap-1 overflow-x-auto pb-0" id="pcThumbs" role="tablist" aria-label="Миниатюры">
-                ${photos.map((u,i)=>`
-                  <button data-index="${i}" class="pc-thumb"><img src="${escapeAttr(u)}" alt="Миниатюра ${i+1}" class="h-16 w-auto rounded-xl"/>
-                  </button>
-                `).join('')}
-              </div>
-            </div>`;
-            parts.push(hero);
-        }
+        // === GALLERY (под описанием, до отзывов) ===
+        (function(){
+            let raw = service.photos;
+            let arr = [];
+            try{
+                if (typeof raw === 'string') {
+                    let s = raw.trim();
+                    if (s.startsWith('[')) { arr = JSON.parse(s); } // JSON-строка
+                    else { arr = s.split(','); }                     // CSV
+                } else if (Array.isArray(raw)) {
+                    arr = raw;
+                }
+            }catch(e){ console.warn('[gallery] parse error', e, raw); arr = []; }
+
+            const normalized = (arr || [])
+                .map(p => (typeof p === 'string' ? p : (p && p.url ? p.url : '')))
+                .map(s => s.trim())
+                .filter(Boolean);
+
+            if (normalized.length){
+                const safe = JSON.stringify(normalized).replace(/'/g,'&apos;').replace(/"/g,'&quot;');
+                parts.push(`<div class="smart-gallery mt-4" data-photos='${safe}'></div>`);
+            }
+        })();
+        // === /GALLERY ===
 parts.push(`<div id="feedbacks-container" class="mt-6"></div>`);
         screen().innerHTML = `<div class="space-y-2 animate-in">${parts.join('')}</div>`;
-        // Carousel logic
-        (function(){
-            const wrap = document.getElementById('photoCarousel');
-            if (!wrap) return;
-            const hero = document.getElementById('pcHero');
-            const prev = document.getElementById('pcPrev');
-            const next = document.getElementById('pcNext');
-            const counter = document.getElementById('pcCounter');
-            const thumbs = Array.from(document.querySelectorAll('#pcThumbs .pc-thumb'));
-            const photos = (service.photos||[]).filter(Boolean);
-            let idx = 0;
-
-            
-function fitHero(){
-                const container = hero.parentElement;
-                if (!container) return;
-                const vw = Math.min(window.innerHeight*0.72, 860);
-                const w = container.clientWidth || hero.naturalWidth || 1;
-                const iw = hero.naturalWidth || w;
-                const ih = hero.naturalHeight || vw;
-                const desired = Math.min(vw, w * (ih/iw));
-                container.style.minHeight = desired + 'px';
-            }
-            
-// --- keep tall images centered during user navigation (not on initial load) ---
-function centerInViewport(el){
-    try{
-        if(!el || !el.getBoundingClientRect) return;
-        var r = el.getBoundingClientRect();
-        var y = (window.pageYOffset || document.documentElement.scrollTop || 0) + r.top;
-        var vh = Math.max(window.innerHeight || 0, document.documentElement.clientHeight || 0);
-        var target = Math.max(0, Math.round(y - (vh/2 - r.height/2)));
-        if (typeof window.scrollTo === 'function') window.scrollTo(0, target);
-    }catch(e){}
-}
-
-function update(){
-                hero.src = photos[idx];
-                if (hero.complete) fitHero(); else hero.onload = ()=>fitHero();
-                counter.textContent = (idx+1) + ' / ' + photos.length;
-                if (typeof captionEl !== 'undefined' && captionEl){ const c = captions[idx]; if (c){ captionEl.textContent = String(c); captionEl.classList.remove('hidden'); } else { captionEl.classList.add('hidden'); } }
-                thumbs.forEach((b,i)=>{
-                    if (i===idx) b.classList.add('is-active');
-                    else b.classList.remove('is-active');
-                });
-                // Auto-scroll selected thumb into view
-                const active = thumbs[idx];
-                if (active) { active; /* disabled cleaned */  }
-                // Hide arrows when not navigable
-                if (idx <= 0) { prev.classList.add('hidden'); next.classList.remove('hidden'); }
-else if (idx >= photos.length - 1) { next.classList.add('hidden'); prev.classList.remove('hidden'); }
-else { prev.classList.remove('hidden'); next.classList.remove('hidden'); }
-                // Keep carousel in viewport
-                if (wrap && wrap.scrollIntoView){ wrap; /* disabled cleaned */  }
-            }
-
-
-            thumbs.forEach(b=> b.addEventListener('click', ()=>{ idx = Number(b.dataset.index)||0; update(); if ((new URLSearchParams(location.hash.slice(1))).get('view')==='service') centerInViewport(wrap); }));
-            prev.addEventListener('click', ()=>{ if (idx>0){ idx--; update(); if ((new URLSearchParams(location.hash.slice(1))).get('view')==='service') centerInViewport(wrap); } });
-            next.addEventListener('click', ()=>{ if (idx<photos.length-1){ idx++; update(); if ((new URLSearchParams(location.hash.slice(1))).get('view')==='service') centerInViewport(wrap); } });
-
-            document.addEventListener('keydown', (e)=>{
-                if (!wrap) return;
-                if (e.key==='ArrowLeft' && idx>0){ idx--; update(); if ((new URLSearchParams(location.hash.slice(1))).get('view')==='service') centerInViewport(wrap); }
-                if (e.key==='ArrowRight' && idx<photos.length-1){ idx++; update(); if ((new URLSearchParams(location.hash.slice(1))).get('view')==='service') centerInViewport(wrap); }
-            });
-
-            // Ensure correct initial state
-            update();
-            window.addEventListener('resize', fitHero, {passive:true});
-        })();
-
     }
     async function fetchFeedbacks(serviceId){
         const container=document.getElementById('feedbacks-container'); if(!container) return; container.innerHTML = inlineSpinner('Загружаем отзывы...');
@@ -729,10 +676,10 @@ else { prev.classList.remove('hidden'); next.classList.remove('hidden'); }
             updateHash({ q: '' }, true);
             results.innerHTML = '';
             state.textContent = 'Введите запрос для поиска';
-            input; /* disabled */;
+            input.focus();
         };
 
-        if (q) doSearch(q, state, results); else input; /* disabled */;
+        if (q) doSearch(q, state, results); else input.focus();
 
         function isDesktopPointer(){
             return window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
@@ -885,7 +832,6 @@ else { prev.classList.remove('hidden'); next.classList.remove('hidden'); }
     function inlineSpinner(msg){ return `<div class="flex items-center justify-center gap-2 text-sm text-slate-500 py-2"><div class="w-5 h-5 border-2 border-slate-300 dark:border-slate-700 border-t-brand rounded-full animate-spin"></div><span>${escapeHTML(msg)}</span></div>`; }
 
     function escapeHTML(str){ return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;'); }
-function escapeAttr(str){ return escapeHTML(str); }
     function getGroupId(g){ return g.groupId ?? g.GroupID ?? g.id ?? g.ID ?? g.groupID ?? String(g.name || g.title || Math.random().toString(36).slice(2)); }
     function getGroupName(g){ return g.groupName ?? g.GroupName ?? g.name ?? g.title ?? 'Группа'; }
     function getServiceId(s){ return s.servicesID ?? s.serviceId ?? s.id ?? s.ID ?? s.ServiceID ?? s.ServicesID ?? Math.random().toString(36).slice(2); }
@@ -894,69 +840,3 @@ function escapeAttr(str){ return escapeHTML(str); }
     function formatPhoneNumbers(text){ const lines=String(text||'').split('\n'); return lines.map(l=>{ const t=l.trim(); const num=t.replace(/[^\d+]/g,''); if(num.length>=7){ return `<a class=\"underline underline-offset-2\" href=\"tel:${escapeHTML(num)}\">${escapeHTML(t)}</a>`;} return escapeHTML(t); }).join('<br>'); }
     function linkify(text){ const esc=escapeHTML(String(text||'')); const urlRe=/\b((?:https?:\/\/|ftp:\/\/)[^\s<>"']+|www\.[^\s<>"']+)/gi; return esc.replace(urlRe,(m)=>{ const href=m.startsWith('http')||m.startsWith('ftp')? m : ('https://'+m); return `<a class=\"underline underline-offset-2 break-anywhere\" href=\"${href}\" target=\"_blank\" rel=\"noopener noreferrer\">${m}</a>`; }); }
     function calculateAverageRating(list){ if(!Array.isArray(list)||list.length===0) return 0; const nums=list.map(x=>Number(x.feedbackRating)).filter(n=>Number.isFinite(n)); if(nums.length===0) return 0; const avg=nums.reduce((a,b)=>a+b,0)/nums.length; return Math.round(avg*10)/10; }
-
-
-// --- Photo UI enhancements (2025-10-04) ---
-(function(){
-  function ensureTitle(container){
-    if (!container) return;
-    var prev = container.previousElementSibling;
-    var already = prev && prev.tagName === 'P' && prev.classList.contains('font-medium') && /Фотограф/i.test(prev.textContent || '');
-    if (!already){
-      var h = document.createElement('p');
-      h.className = 'font-medium';
-      h.textContent = '📷 Фотографии';
-      container.parentNode.insertBefore(h, container);
-    }
-  }
-
-  function updateCaption(container){
-    var cap = container.querySelector('.photo-caption');
-    if (cap) cap.remove();
-  }
-
-  function fixArrows(container){
-    var prev = container.querySelector('#pcPrev, [data-role="prev"], button[aria-label="Предыдущее"]');
-    var next = container.querySelector('#pcNext, [data-role="next"], button[aria-label="Следующее"]');
-    [prev, next].forEach(function(btn){
-      if (!btn) return;
-      btn.classList.add('arrow-btn-fix');
-    });
-  }
-
-  function centerOnChange(container){
-    var hero = container.querySelector('#pcHero, img[id^="pcHero"], img');
-    if (!hero) return;
-    function centerNow(){
-      try { hero; /* disabled cleaned */  }
-      catch(e){ hero; /* disabled cleaned */  }
-    }
-    ['click','keyup','touchend'].forEach(function(ev){
-      container.addEventListener(ev, function(e){
-        var t = e.target;
-        if (!t) return;
-        if (t.closest('#pcPrev') || t.closest('#pcNext') || t.closest('[data-role="prev"]') || t.closest('[data-role="next"]') || t.closest('img')){
-          setTimeout(centerNow, 0);
-        }
-      }, {passive:true});
-    });
-    setTimeout(centerNow, 0);
-  }
-
-  function enhance(container){
-    if (!container || container.__enhanced) return;
-    container.__enhanced = true;
-    ensureTitle(container);
-    updateCaption(container);
-    fixArrows(container);
-    centerOnChange(container);
-  }
-
-  function scan(){
-    document.querySelectorAll('#photoCarousel, .photo-carousel, [data-carousel="photos"]').forEach(enhance);
-  }
-
-  document.addEventListener('DOMContentLoaded', scan);
-  window.addEventListener('hashchange', function(){ setTimeout(scan, 0); });
-  new MutationObserver(function(){ scan(); }).observe(document.documentElement, {childList:true, subtree:true});
-})();
