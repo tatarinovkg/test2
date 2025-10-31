@@ -78,43 +78,35 @@ const tg = window.Telegram ? window.Telegram.WebApp : null;
         const sp = new URLSearchParams(location.search);
         const path = location.pathname.toLowerCase();
     
-        // ✅ Поддержка /open_service?id=123, ?path=open_service&id=123 и ?open_service&id=123
-        const isOpenService =
-            path.includes('/open_service') ||
-            sp.get('path') === 'open_service' ||
-            sp.has('open_service');
-    
+        // ✅ Поддержка /open_service?id=123 и ?path=open_service&id=123
+        const isOpenService = path.includes('/open_service') || sp.get('path') === 'open_service';
         if (isOpenService) {
             const sid = sp.get('id');
             if (sid && /^\d+$/.test(sid)) {
-                // показать загрузочный экран и скрыть обычную кнопку "Назад"
+                // сразу показываем загрузку
                 screen().innerHTML = pageLoading('Загружаем услугу...');
                 setHeaderActionsForRoot(false);
-                setBackVisible(false);
+                setBackVisible(false); // обычную кнопку скрываем
     
                 showServiceScreen(Number(sid)).then(() => {
+                    // — создаём отдельную кнопку “Главное меню”
                     const header = document.querySelector('header .flex.items-center.gap-3');
                     if (!header) return;
     
-                    // если старая кнопка "Главное меню" осталась — убрать
+                    // если уже была — удаляем, чтобы не дублировать
                     const existing = document.getElementById('mainMenuBtn');
                     if (existing) existing.remove();
     
-                    // создать кнопку "Главное меню"
                     const mainMenuBtn = document.createElement('button');
                     mainMenuBtn.id = 'mainMenuBtn';
                     mainMenuBtn.textContent = 'Главное меню';
                     mainMenuBtn.className =
                         'inline-flex px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800';
+    
                     mainMenuBtn.onclick = () => {
                         mainMenuBtn.remove();
-                        // перейти на корень сайта без query и hash
-                        const base =
-                            location.origin +
-                            (location.pathname.endsWith('index.html')
-                                ? location.pathname.replace(/index\.html$/, '')
-                                : location.pathname.replace(/open_service.*$/, ''));
-                        location.href = base;
+                        // полностью очищаем URL и возвращаем на главную
+                        location.href = location.origin + location.pathname.replace(/open_service.*$/, 'index.html');
                     };
     
                     header.prepend(mainMenuBtn);
@@ -146,7 +138,7 @@ const tg = window.Telegram ? window.Telegram.WebApp : null;
     
         routeFromHash();
     }
-    
+
     function routeFromHash(){
         const p = new URLSearchParams(location.hash.replace(/^#/, ''));
         const view = p.get('view') || 'groups';
