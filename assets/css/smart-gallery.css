@@ -110,3 +110,5 @@ html[data-theme="dark"] .sg-counter, body[data-theme="dark"] .sg-counter {
   .sg-controls { gap: 10px; }
   .sg-counter { font-size: 0.86rem; }
 }
+
+.sg-canvas{position:absolute;inset:0;background-repeat:no-repeat;background-position:center;background-size:contain}
