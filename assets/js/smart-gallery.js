@@ -4,27 +4,58 @@
   function build(root) {
     if (root.__sg) return;
     try {
+      // === Нормализация списка фотографий (шаг 3) ===
       let photos = [];
-      const data = root.getAttribute("data-photos") || "";
-      if (data) {
-        const decoded = data.replace(/&quot;/g, '"').replace(/&apos;/g, "'");
-        try { photos = JSON.parse(decoded); }
-        catch { photos = decoded.split(",").map(s => s.trim()); }
+      const rawAttr = root.getAttribute("data-photos");
+
+      if (rawAttr) {
+        // data-photos может быть HTML-эскейпнутым JSON или CSV/списком в несколько строк
+        let raw = rawAttr.replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+        try {
+          const parsed = JSON.parse(raw);
+          photos = Array.isArray(parsed) ? parsed : [];
+        } catch {
+          photos = raw.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+        }
       } else {
-        // без :scope для совместимости
-        photos = Array.from(root.querySelectorAll("img")).map(img => img.getAttribute("src")).filter(Boolean);
+        // Без :scope для совместимости с WebKit
+        photos = Array.from(root.querySelectorAll("img[src]"))
+            .map(img => img.getAttribute("src"))
+            .filter(Boolean);
       }
-      photos = photos.map(p => (typeof p === "string" ? p : p?.url || "")).filter(Boolean);
+
+      // Берём строку или поле url/src/href
+      const pickUrl = (p) => (typeof p === "string" ? p : (p && (p.url || p.src || p.href)) || "");
+      photos = photos.map(pickUrl).filter(Boolean);
+
+      // Приводим к абсолютным URL
+      photos = photos.map(u => {
+        try { return new URL(u, location.href).toString(); } catch { return u; }
+      });
+
+      // Удаляем служебный кэш-бастер _sg, если уже есть
+      photos = photos.map(u => {
+        try {
+          const url = new URL(u);
+          url.searchParams.delete("_sg");
+          return url.toString();
+        } catch { return u; }
+      });
+
+      // Дедупликация
+      photos = photos.filter((v, i, a) => a.indexOf(v) === i);
+
       if (!photos.length) return;
 
-      // Разметка
+      // === Разметка ===
       root.innerHTML = "";
       const stage = document.createElement("div");
       stage.className = "sg-stage";
 
       const img = document.createElement("img");
-      // КРИТИЧЕСКОЕ: грузим сразу, без lazy — именно это лечит iOS
+      // Критично для iOS: грузим сразу, без lazy
       img.loading = "eager";
+      img.fetchPriority = "high";   // iOS 17.2+ ок
       img.decoding = "async";
       img.alt = "";
       stage.appendChild(img);
@@ -56,18 +87,60 @@
 
       let i = 0;
 
-      function setSrcDirect(src) {
-        // без анимаций/промежуточных opacity: iOS это любит
-        if (img.src !== src) {
-          img.removeAttribute("style");
-          img.src = src;
-        }
-      }
-
       function render() {
         const src = photos[i];
         if (!src) return;
-        setSrcDirect(src);
+
+        // Без анимаций — так стабильнее в iOS WebView/Telegram
+        img.style.transition = "none";
+        img.style.opacity = 1;
+
+        // Детект iOS-Telegram: включаем «жёсткий» ретрай только там
+        const isTg = !!(window.Telegram && window.Telegram.WebApp);
+        const isIos = /iP(hone|ad|od)/.test(navigator.userAgent);
+        const isTgIos = isTg && (window.Telegram.WebApp.platform === "ios" || isIos);
+
+        let attempt = 0;
+        const MAX_ATTEMPTS = 2;
+
+        function withBuster(u, n) {
+          try {
+            const url = new URL(u, location.href);
+            url.searchParams.set("_sg", `${Date.now()}_${n}`);
+            return url.toString();
+          } catch {
+            return u + (u.includes("?") ? "&" : "?") + `_sg=${Date.now()}_${n}`;
+          }
+        }
+
+        function trySet(original) {
+          img.src = (isTgIos && attempt > 0) ? withBuster(original, attempt) : original;
+
+          if (!isTgIos) return; // в обычных браузерах этого достаточно
+
+          // Страховка: если за ~1.5с так и не загрузилось — ретрай с бестером
+          let done = false;
+          const timer = setTimeout(() => {
+            if (done) return;
+            if (!img.complete || img.naturalWidth === 0) {
+              if (attempt < MAX_ATTEMPTS) {
+                attempt++;
+                trySet(original);
+              }
+            }
+          }, 1500);
+
+          img.onload = () => { done = true; clearTimeout(timer); };
+          img.onerror = () => {
+            if (done) return;
+            clearTimeout(timer);
+            if (attempt < MAX_ATTEMPTS) { attempt++; trySet(original); }
+          };
+        }
+
+        trySet(src);
+
+        // Счётчик
         counter.textContent = `${i + 1} / ${photos.length}`;
       }
 
@@ -77,7 +150,7 @@
       btnNext.addEventListener("click", next);
       btnPrev.addEventListener("click", prev);
 
-      // свайпы
+      // Свайпы
       let tx = null;
       stage.addEventListener("touchstart", e => { tx = e.changedTouches[0].clientX; }, { passive: true });
       stage.addEventListener("touchend", e => {
