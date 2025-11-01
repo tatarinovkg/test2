@@ -7,23 +7,34 @@
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-/* Фото-блок */
+/* Сцена с фолбэком ширины/высоты для старых браузеров */
 .sg-stage {
   width: 100%;
-  aspect-ratio: 16 / 9;
   background: #f1f1f1;
   border-radius: 12px;
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.3s ease;
+  display: block;
+  position: relative;
 }
+
+/* Фолбэк 16:9 через псевдоэлемент */
+.sg-stage::before {
+  content: "";
+  display: block;
+  padding-top: 56.25%;
+}
+
+/* Если есть поддержка aspect-ratio — используем её, убираем фолбэк */
+@supports (aspect-ratio: 1 / 1) {
+  .sg-stage { aspect-ratio: 16 / 9; }
+  .sg-stage::before { display: none; content: none; }
+}
+
 .sg-stage img {
-  width: 100%;
-  height: 100%;
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
   object-fit: contain;
-  transition: opacity 0.3s ease;
+  /* без transition — убрали анимации полностью */
 }
 
 /* Панель управления */
@@ -36,8 +47,8 @@
   margin-top: 0.9rem;
 }
 
-/* Когда кнопки скрыты — центрировать счётчик */
-.sg-controls:has(.sg-btn[style*="display: none"]) {
+/* Центрировать счётчик, когда один кадр (ставим класс из JS) */
+.sg-controls.single {
   display: flex;
   justify-content: center;
 }
@@ -45,105 +56,57 @@
 /* Кнопки */
 .sg-btn {
   justify-self: start;
-  width: 44px;
-  height: 44px;
+  width: 44px; height: 44px;
   border-radius: 50%;
   border: 1px solid #d1d5db;
-  background: #fff;
-  color: #374151;
-  font-size: 1.35rem;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  user-select: none;
-  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+  background: #fff; color: #374151;
+  font-size: 1.35rem; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; user-select: none;
+  transition: background .25s ease, border-color .25s ease, color .25s ease;
 }
-.sg-btn:hover {
-  background: #f3f4f6;
-  border-color: #cbd5e1;
-}
-.sg-btn:active {
-  background: #e5e7eb;
-}
-.sg-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.sg-btn.next {
-  justify-self: end;
-}
+.sg-btn:hover { background: #f3f4f6; border-color: #cbd5e1; }
+.sg-btn:active { background: #e5e7eb; }
+.sg-btn:disabled { opacity: 0.45; cursor: default; }
+.sg-btn.next { justify-self: end; }
 
 /* Счётчик */
 .sg-counter {
   justify-self: center;
   padding: 0.38rem 1.1rem;
-  min-width: 82px;
-  text-align: center;
+  min-width: 82px; text-align: center;
   border-radius: 9999px;
-  background: #f3f4f6;
-  color: #111827;
-  font-weight: 600;
-  font-size: 0.92rem;
-  transition: background 0.3s ease, color 0.3s ease;
+  background: #f3f4f6; color: #111827;
+  font-weight: 600; font-size: 0.92rem;
 }
 
-.sg-btn svg {
-  display: block;
-  width: 20px;
-  height: 20px;
-  stroke: currentColor;
-}
+.sg-btn svg { display: block; width: 20px; height: 20px; stroke: currentColor; }
 
-/* === Тёмный режим (для body.dark и html.dark) === */
+/* Тёмная тема (как было) */
 html.dark .sg-stage,
 body.dark .sg-stage,
 html[data-theme="dark"] .sg-stage,
-body[data-theme="dark"] .sg-stage {
-  background: #1e293b; /* фон плеера — глубокий тёмно-синий */
+body[data-theme="dark"] .sg-stage { background: #1e293b; }
+html.dark .sg-btn, body.dark .sg-btn,
+html[data-theme="dark"] .sg-btn, body[data-theme="dark"] .sg-btn {
+  background: #2a3448; border-color: #3b465d; color: #e2e8f0;
 }
-
-html.dark .sg-btn,
-body.dark .sg-btn,
-html[data-theme="dark"] .sg-btn,
-body[data-theme="dark"] .sg-btn {
-  background: #2a3448;
-  border-color: #3b465d;
-  color: #e2e8f0;
+html.dark .sg-btn:hover, body.dark .sg-btn:hover,
+html[data-theme="dark"] .sg-btn:hover, body[data-theme="dark"] .sg-btn:hover {
+  background: #374151; border-color: #475569;
 }
-html.dark .sg-btn:hover,
-body.dark .sg-btn:hover,
-html[data-theme="dark"] .sg-btn:hover,
-body[data-theme="dark"] .sg-btn:hover {
-  background: #374151;
-  border-color: #475569;
-}
-html.dark .sg-btn:active,
-body.dark .sg-btn:active,
-html[data-theme="dark"] .sg-btn:active,
-body[data-theme="dark"] .sg-btn:active {
+html.dark .sg-btn:active, body.dark .sg-btn:active,
+html[data-theme="dark"] .sg-btn:active, body[data-theme="dark"] .sg-btn:active {
   background: #475569;
 }
-html.dark .sg-counter,
-body.dark .sg-counter,
-html[data-theme="dark"] .sg-counter,
-body[data-theme="dark"] .sg-counter {
-  background: rgba(255, 255, 255, 0.1);
-  color: #f8fafc;
+html.dark .sg-counter, body.dark .sg-counter,
+html[data-theme="dark"] .sg-counter, body[data-theme="dark"] .sg-counter {
+  background: rgba(255,255,255,0.1); color: #f8fafc;
 }
 
 /* Мобильные правки */
 @media (max-width: 480px) {
-  .sg-btn {
-    width: 40px;
-    height: 40px;
-    font-size: 1.25rem;
-  }
-  .sg-controls {
-    gap: 10px;
-  }
-  .sg-counter {
-    font-size: 0.86rem;
-  }
+  .sg-btn { width: 40px; height: 40px; font-size: 1.25rem; }
+  .sg-controls { gap: 10px; }
+  .sg-counter { font-size: 0.86rem; }
 }
